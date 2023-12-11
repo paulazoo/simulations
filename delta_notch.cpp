@@ -47,8 +47,26 @@ pair<vector<vector<int>>, vector<int>> get_grid_a(int nx, int ny) {
 }
 
 int main() {
-    int nx = 3; // replace with your desired values
-    int ny = 3; // replace with your desired values
+    // nx and ny are cells on the x and y sides of the grid
+    int nx = 2; // replace with your desired values
+    int ny = 2; // replace with your desired values
+    
+    auto result = get_grid_a(nx, ny);
+
+    // Print adjs
+    cout << "adjs:" << endl;
+    for (const auto &adj : result.first) {
+        for (int neighbor : adj) {
+            cout << neighbor << ' ';
+        }
+        cout << endl;
+    }
+
+    // Print count
+    cout << "count:" << endl;
+    for (int compartment : result.second) {
+        cout << compartment << ' ';
+    }
 
     return 0;
 }
