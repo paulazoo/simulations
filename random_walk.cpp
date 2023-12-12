@@ -5,24 +5,24 @@
 
 using namespace std;
 
+const int WINDOW_HEIGHT = 500;
+const int WINDOW_WIDTH = 500;
+const float RENDERER_SCALE = 5.0;
+
 int main()
 {
-    const int windowHeight = 500;
-    const int windowWidth = 500;
-    const float rendererScale = 5.0;
-
     SDL_Init(SDL_INIT_VIDEO);
     SDL_Window *window;
     SDL_Renderer *renderer;
     window = SDL_CreateWindow("SDL Window",
-            SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, windowWidth,
-            windowHeight, SDL_WINDOW_SHOWN);
+            SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WINDOW_WIDTH,
+            WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    SDL_RenderSetScale(renderer, rendererScale, rendererScale);
+    SDL_RenderSetScale(renderer, RENDERER_SCALE, RENDERER_SCALE);
 
     // Setup
-    int x = windowWidth/2 /rendererScale;
-    int y = windowHeight/2 /rendererScale;
+    int x = WINDOW_WIDTH/2 /RENDERER_SCALE;
+    int y = WINDOW_HEIGHT/2 /RENDERER_SCALE;
     vector<int> x_history;
     vector<int> y_history;
     random_device random_seed;
@@ -56,26 +56,26 @@ int main()
                 break;
         }
         // Infinite space
-        if (x > windowWidth /rendererScale)
+        if (x > WINDOW_WIDTH /RENDERER_SCALE)
         {
             x = 0;
         } else if (x < 0)
         {
-            x = windowWidth /rendererScale;
+            x = WINDOW_WIDTH /RENDERER_SCALE;
         }
 
-        if (y > windowHeight /rendererScale)
+        if (y > WINDOW_HEIGHT /RENDERER_SCALE)
         {
             y = 0;
         } else if (y < 0)
         {
-            y = windowHeight /rendererScale;
+            y = WINDOW_HEIGHT /RENDERER_SCALE;
         }
 
         x_history.push_back(x);
         y_history.push_back(y);
 
-        // Blank canvas
+        // Blank black canvas
         SDL_SetRenderDrawColor(renderer,0,0,0,SDL_ALPHA_OPAQUE);
         SDL_RenderClear(renderer);
 
