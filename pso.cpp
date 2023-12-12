@@ -11,7 +11,7 @@ using namespace std;
 
 const int WINDOW_HEIGHT = 500;
 const int WINDOW_WIDTH = 500;
-const float RENDERER_SCALE = 2.0;
+const float RENDERER_SCALE = 5.0;
 const double WINDOW_CENTER_X = WINDOW_WIDTH/2 /RENDERER_SCALE;
 const double WINDOW_CENTER_Y = WINDOW_HEIGHT/2 /RENDERER_SCALE;
 
@@ -47,44 +47,52 @@ ParticleState initialize_particles(int num_particles, mt19937 gen) {
 }
 
 // Helper function for infinite space and wrap around positions
-vector<double> infinite_space(vector<double> position) {
+pair<vector<double>, vector<double>> infinite_space(vector<double> position, vector<double> velocity) {
     if (position[0] > WINDOW_WIDTH /RENDERER_SCALE)
     {
-        position[0] = 0;
+        position[0] = WINDOW_WIDTH /RENDERER_SCALE;
+        velocity[0] = 0;
     } else if (position[0] < 0)
     {
-        position[0] = WINDOW_WIDTH /RENDERER_SCALE;
+        position[0] = 0;
+        velocity[0] = 0;
     }
     if (position[1] > WINDOW_HEIGHT /RENDERER_SCALE)
     {
-        position[1] = 0;
+        position[1] = WINDOW_HEIGHT /RENDERER_SCALE;
+        velocity[1] = 0;
     } else if (position[1] < 0)
     {
-        position[1] = WINDOW_HEIGHT /RENDERER_SCALE;
+        position[1] = 0;
+        velocity[1] = 0;
     }
 
-    return position;
+    return make_pair(position, velocity);
 }
 
-double calculateDistance(const vector<double>& p1, const vector<double>& p2) {
+double calculate_distance(const vector<double>& p1, const vector<double>& p2) {
     double distance = sqrt(pow(p1[0] - p2[0], 2) + pow(p1[1] - p2[1], 2));
     return distance;
 }
 
-// For now, neighbor function is just Euclidean num_neighbors closest particles
-vector<vector<double>> get_social_neighbors(const vector<double>& reference, const vector<vector<double>>& positions, int num_neighbors) {
+// For now, neighbor function is just all neighbors within a distance
+vector<vector<double>> get_social_neighbors(const vector<double>& reference, const vector<vector<double>>& positions, int neighborhood_distance) {
     vector<pair<double, vector<double>>> distances;
 
     for (const auto& pos : positions) {
-        double distance = calculateDistance(pos, reference);
+        double distance = calculate_distance(pos, reference);
         distances.push_back({distance, pos});
     }
 
+    // Sorting based on distance
     sort(distances.begin(), distances.end());
 
     vector<vector<double>> neighbors;
-    for (size_t i = 0; i < num_neighbors; ++i) {
-        neighbors.push_back(distances[i].second);
+    for (const auto& dist_pos_pair : distances) {
+        double distance = dist_pos_pair.first;
+        if (distance <= neighborhood_distance && distance > 0) { // don't inlcude yourself
+            neighbors.push_back(dist_pos_pair.second);
+        }
     }
 
     return neighbors;
@@ -107,9 +115,42 @@ vector<double> get_best_position(vector<vector<double>>& positions, vector<doubl
     return best_position;
 }
 
+// Helper function to adjust particle positions and velocities to avoid collisions
+vector<double> avoid_collisions(vector<double> position, vector<double> velocity, int i, vector<vector<double>>& particle_positions) {
+    for (size_t j = 0; j < particle_positions.size(); ++j) {
+        if (j != i) {
+            vector<double> direction_ij = {particle_positions[j][0] - position[0],
+                                            particle_positions[j][1] - position[1]};
+            double norm = calculate_distance({0.0, 0.0}, direction_ij);
+            direction_ij[0] /= norm;
+            direction_ij[1] /= norm;
+
+            velocity[0] -= (10/(norm*norm)) * direction_ij[0];
+            velocity[1] -= (10/(norm*norm)) * direction_ij[1];
+        }
+    }
+    return velocity;
+}
+
+vector<double> scatter(vector<double> position, vector<double> velocity, int i, vector<vector<double>>& particle_positions) {
+    for (size_t j = 0; j < particle_positions.size(); ++j) {
+        if (j != i) {
+            vector<double> direction_ij = {particle_positions[j][0] - position[0],
+                                            particle_positions[j][1] - position[1]};
+            double norm = calculate_distance({0.0, 0.0}, direction_ij);
+            direction_ij[0] /= norm;
+            direction_ij[1] /= norm;
+
+            velocity[0] -= (100) * direction_ij[0];
+            velocity[1] -= (100) * direction_ij[1];
+        }
+    }
+    return velocity;
+}
+
 // Run PSO simulation
-pair<vector<vector<vector<double>>>, vector<vector<double>>> run_pso(int num_particles, int max_iterations, int num_neighbors, double c1, double c2, double w, mt19937 gen) {
-    double timestep = 0.01;
+pair<vector<vector<vector<double>>>, vector<vector<double>>> run_pso(int num_particles, int max_iterations, int neighborhood_distance, double c1, double c2, double w, mt19937 gen) {
+    double timestep = 0.001;
 
     // Initialize the global best-known position and value
     ParticleState particles = initialize_particles(num_particles, gen);
@@ -126,7 +167,7 @@ pair<vector<vector<vector<double>>>, vector<vector<double>>> run_pso(int num_par
 
     // PSO optimization loop
     for (int iteration = 0; iteration < max_iterations; ++iteration) {
-        if (iteration % 100 == 0) {
+        if (iteration % 200 == 0) {
             f_center = {U(gen) *WINDOW_WIDTH/RENDERER_SCALE, U(gen) *WINDOW_HEIGHT/RENDERER_SCALE};
         }
 
@@ -135,20 +176,37 @@ pair<vector<vector<vector<double>>>, vector<vector<double>>> run_pso(int num_par
             vector<double>& velocity = particle_velocities[i];
             vector<double>& personal_best_position = particle_best_positions[i];
 
-            // 0. Find social influence group and social_best_position
-            vector<vector<double>> social_neighbors_positions = get_social_neighbors(position, particle_positions, num_neighbors);
-            vector<double> social_best_position = get_best_position(social_neighbors_positions, f_center);
+            // 0. Find social influence group and social_best_position; update velocity
+            vector<vector<double>> social_neighbors_positions = get_social_neighbors(position, particle_positions, neighborhood_distance);
+            if (social_neighbors_positions.empty()) {
+                // if no neighbors, don't just decrease velocity
+                double r1 = U(gen);
+                double r2 = U(gen);
+                velocity[0] = velocity[0] + c1 * r1 * (personal_best_position[0] - position[0]);
+                velocity[1] = velocity[1] + c1 * r1 * (personal_best_position[1] - position[1]);
+            } else {
+                vector<double> social_best_position = get_best_position(social_neighbors_positions, f_center);
 
-            // 1. Update velocity and position
-            double r1 = U(gen);
-            double r2 = U(gen);
+                double r1 = U(gen);
+                double r2 = U(gen);
 
-            velocity[0] = w * velocity[0] + c1 * r1 * (personal_best_position[0] - position[0]) + c2 * r2 * (social_best_position[0] - position[0]);
-            velocity[1] = w * velocity[1] + c1 * r1 * (personal_best_position[1] - position[1]) + c2 * r2 * (social_best_position[1] - position[1]);
+                velocity[0] = w * velocity[0] + c1 * r1 * (personal_best_position[0] - position[0]) + c2 * r2 * (social_best_position[0] - position[0]);
+                velocity[1] = w * velocity[1] + c1 * r1 * (personal_best_position[1] - position[1]) + c2 * r2 * (social_best_position[1] - position[1]);
+            }
+            
+            // 0.5 Consider collisions
+            if (iteration == 1000 || iteration == 500 || iteration == 1500) {
+                velocity = scatter(position, velocity, i, particle_positions);
+            } else {
+                velocity = avoid_collisions(position, velocity, i, particle_positions);
+            }
 
+            // 1. Update position
             position[0] = position[0] + velocity[0]*timestep;
             position[1] = position[1] + velocity[1]*timestep;
-            position = infinite_space(position);
+            pair<vector<double>, vector<double>> infinite_correction = infinite_space(position, velocity);
+            position = infinite_correction.first;
+            velocity = infinite_correction.second;
 
             // 2. Evaluate the objective function at the new position
             double value = f(position, f_center);
@@ -167,41 +225,51 @@ pair<vector<vector<vector<double>>>, vector<vector<double>>> run_pso(int num_par
 }
 
 void draw_particles(SDL_Renderer* renderer, int time, vector<vector<vector<double>>> particles_history, int num_particles) {
-    for (int i = max(0, time - 500); i < time; ++i) {
+    for (int i = max(0, time - 2000); i < time; ++i) {
         // the higher the i, the more recent
 
         vector<vector<double>> particles_to_draw = particles_history[i];
-        int color = i*255 / time;
+        int color = 255* (i - max(0, time-2000))/(time - max(0, time-2000));
 
-        for (int particle_index =0; particle_index < num_particles; ++particle_index) {
+        for (int particle_index = 0; particle_index < num_particles; ++particle_index) {
             double x_to_draw = particles_to_draw[particle_index][0];
             double y_to_draw = particles_to_draw[particle_index][1];
-            SDL_SetRenderDrawColor(renderer, color, color, color, SDL_ALPHA_OPAQUE);
+            if (particle_index % 3 == 0) {
+                SDL_SetRenderDrawColor(renderer, color, color, 0, SDL_ALPHA_OPAQUE);
+            } else if (particle_index % 3 == 1){
+                SDL_SetRenderDrawColor(renderer, color, 0, 0, SDL_ALPHA_OPAQUE);
+            } else {
+                SDL_SetRenderDrawColor(renderer, color, 0, color, SDL_ALPHA_OPAQUE);
+            }
             SDL_RenderDrawPoint(renderer, x_to_draw, y_to_draw);
         }
     }
 }
 
 void draw_f_center(SDL_Renderer* renderer, vector<double> f_center) {
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
     SDL_RenderDrawPoint(renderer, f_center[0], f_center[1]);
+    SDL_RenderDrawPoint(renderer, f_center[0], f_center[1]-1);
+    SDL_RenderDrawPoint(renderer, f_center[0]+1, f_center[1]);
+    SDL_RenderDrawPoint(renderer, f_center[0], f_center[1]+1);
+    SDL_RenderDrawPoint(renderer, f_center[0]-1, f_center[1]);
 }
 
 int main() {
     // INTITIALIZATION =============================================================
     // Define the PSO parameters
-    const int num_particles = 100;
-    const int max_iterations = 1000;
-    const int num_neighbors = 10;
+    const int num_particles = 30;
+    const int max_iterations = 2000;
+    const int neighborhood_distance = 20;
     const double c1 = 1.5;  // Cognitive parameter
     const double c2 = 1.5;  // Social parameter
     const double w = 0.9;   // Inertia weight
 
     // Initialize the random seed
-    mt19937 gen(31415); // supposedly this seeds the rand num generator
+    mt19937 gen(314); // supposedly this seeds the rand num generator
 
     // RUNNING SIMULATION =============================================================
-    pair<vector<vector<vector<double>>>, vector<vector<double>>> pso_history = run_pso(num_particles, max_iterations, num_neighbors, c1, c2, w, gen);
+    pair<vector<vector<vector<double>>>, vector<vector<double>>> pso_history = run_pso(num_particles, max_iterations, neighborhood_distance, c1, c2, w, gen);
     vector<vector<vector<double>>> particles_history = pso_history.first;
     vector<vector<double>> f_center_history = pso_history.second;
 
@@ -240,7 +308,7 @@ int main() {
 
         // Render
         SDL_RenderPresent(renderer);
-        SDL_Delay(50);
+        SDL_Delay(1);
     }
 
     return 0;
