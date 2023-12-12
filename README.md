@@ -6,4 +6,4 @@ to compile: `g++ random_walk.cpp -I/opt/homebrew/include -L/opt/homebrew/lib -lS
 g++ delta_notch.cpp -I/opt/homebrew/include -L/opt/homebrew/lib -lSDL2 -o delta_notch.o -std=c++17
 
 
-g++ plotting.cpp -I/opt/homebrew/include -L/opt/homebrew/lib -lSDL2 -o plotting.o -std=c++17
+g++ pso.cpp -I/opt/homebrew/include -L/opt/homebrew/lib -lSDL2 -o pso.o -std=c++17

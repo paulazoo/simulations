@@ -11,9 +11,11 @@
 
 using namespace std;
 
-const int WINDOW_HEIGHT = 1000;
-const int WINDOW_WIDTH = 1000;
+const int WINDOW_HEIGHT = 600;
+const int WINDOW_WIDTH = 800;
 const float RENDERER_SCALE = 5.0;
+const double WINDOW_CENTER_X = WINDOW_WIDTH/2 /RENDERER_SCALE;
+const double WINDOW_CENTER_Y = WINDOW_HEIGHT/2 /RENDERER_SCALE;
 
 // Helper function for choosing a rxn using a discrete distribution
 // using the values in `possible_rxns` and corresponding relative probabilities given by `rxn_propensities`
@@ -207,8 +209,8 @@ pair<vector<double>, vector<vector<int>>> ssa_delta_notch(vector<int> initial_co
 
 void draw_hexagon(SDL_Renderer* renderer, double center_x, double center_y, double radius, int nx, int ny, uint8_t cell_color) {
     double angle = 30 * M_PI / 180;
-    double window_x_shift = (WINDOW_WIDTH/2 /RENDERER_SCALE) - (radius*nx/2);
-    double window_y_shift = (WINDOW_HEIGHT/2 /RENDERER_SCALE) - (radius*ny/2);
+    double window_x_shift = WINDOW_CENTER_X - (radius*(nx+1)/2);
+    double window_y_shift = WINDOW_CENTER_Y - (radius*(ny+1)/2);
 
     // Calculate the vertices of the hexagon
     vector<double> vertices_x(6);
@@ -244,7 +246,7 @@ void draw_hexagonal_grid(SDL_Renderer* renderer, int nx, int ny, vector<int> com
             double x = (2 * radius * i) - (j * radius);
             double y = 1.5 * j * radius;
 
-            double cell_color = static_cast<double>(compartments[cell_index] *255) / compartments[cell_index+2];
+            double cell_color = 255.0*(1.0 - static_cast<double>(compartments[cell_index]) / compartments[cell_index+2]);
             draw_hexagon(renderer, x, y, radius, nx, ny, static_cast<uint8_t>(cell_color));
 
             cell_index += 3;
@@ -254,10 +256,10 @@ void draw_hexagonal_grid(SDL_Renderer* renderer, int nx, int ny, vector<int> com
 
 int main() {
     // INTITIALIZATION =============================================================
-    int nx = 6; // replace with your desired values
-    int ny = 6; // replace with your desired values
+    int nx = 8; // replace with your desired values
+    int ny = 8; // replace with your desired values
     double time_end = 10.0; // replace with your desired time_end
-    mt19937 gen(31415); // supposedly this seeds the rand num generator
+    mt19937 gen(314); // supposedly this seeds the rand num generator
 
     // get grid of adjs and initial_compartments
     auto grid_result = get_grid(nx, ny, gen);
@@ -295,8 +297,8 @@ int main() {
         }
 
         // RENDERING ============================================================
-        // Blank white canvas
-        SDL_SetRenderDrawColor(renderer,255,255,255,SDL_ALPHA_OPAQUE);
+        // Blank black canvas
+        SDL_SetRenderDrawColor(renderer,0,0,0,SDL_ALPHA_OPAQUE);
         SDL_RenderClear(renderer);
 
         // Render hexagons
@@ -304,7 +306,7 @@ int main() {
         
         // Render
         SDL_RenderPresent(renderer);
-        SDL_Delay(ssa_times[t+1] - ssa_times[t]);
+        SDL_Delay((ssa_times[t+1] - ssa_times[t]) / 10);
     }
     return 0;
 }

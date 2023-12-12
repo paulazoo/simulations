@@ -93,7 +93,7 @@ int main()
 
         // Render
         SDL_RenderPresent(renderer);
-        SDL_Delay(5);
+        SDL_Delay();
     }
      
     SDL_DestroyWindow(window);
