@@ -15,50 +15,12 @@ const float RENDERER_SCALE = 2.0;
 const double WINDOW_CENTER_X = WINDOW_WIDTH/2 /RENDERER_SCALE;
 const double WINDOW_CENTER_Y = WINDOW_HEIGHT/2 /RENDERER_SCALE;
 
-// Objective function
-// // Rosenbrock Function (Banana Function)
-// double f(vector<double> position) {
-//     vector<double> x = {position[0] -WINDOW_CENTER_X, position[1] -WINDOW_CENTER_Y};
+// Convergence, Separation, Alignment, Cohesion
 
-//     double sum = 0.0;
-//     for (size_t i = 0; i < x.size() - 1; ++i) {
-//         double term1 = pow(x[i + 1] - pow(x[i], 2), 2);
-//         double term2 = pow(1 - x[i], 2);
-//         sum += 100.0 * term1 + term2;
-//     }
-//     return sum;
-// }
-
-// // Multimodal Ackley Function
-// double f(vector<double> position) {
-//     vector<double> x = {position[0] -WINDOW_CENTER_X, position[1] -WINDOW_CENTER_Y};
-
-//     const double a = 20.0;
-//     const double b = 0.2;
-//     const double c = 2 * M_PI;
-
-//     size_t dimensions = x.size();
-
-//     double sum1 = 0.0;
-//     double sum2 = 0.0;
-
-//     for (size_t i = 0; i < dimensions; ++i) {
-//         sum1 += x[i] * x[i];
-//         sum2 += cos(c * x[i]);
-//     }
-
-//     double term1 = -a * exp(-b * sqrt(sum1 / dimensions));
-//     double term2 = -exp(sum2 / dimensions);
-
-//     return term1 + term2 + a + exp(1.0);
-// }
-
-// Sin and Cos Waves
-double f(vector<double> position) {
-    vector<double> x = {position[0] -WINDOW_CENTER_X, position[1] -WINDOW_CENTER_Y};
-    return sin(x[0]) + cos(x[1]);
+double f(vector<double> position, vector<double> f_center) {
+    vector<double> x_shifted = {position[0] - f_center[0], position[1] - f_center[1]};
+    return x_shifted[0]*x_shifted[0] + x_shifted[1]*x_shifted[1];
 }
-
 
 using ParticleState = tuple<vector<vector<double>>, vector<vector<double>>, vector<vector<double>>>;
 
@@ -84,8 +46,69 @@ ParticleState initialize_particles(int num_particles, mt19937 gen) {
     return make_tuple(particle_positions, particle_velocities, particle_best_positions);
 }
 
+// Helper function for infinite space and wrap around positions
+vector<double> infinite_space(vector<double> position) {
+    if (position[0] > WINDOW_WIDTH /RENDERER_SCALE)
+    {
+        position[0] = 0;
+    } else if (position[0] < 0)
+    {
+        position[0] = WINDOW_WIDTH /RENDERER_SCALE;
+    }
+    if (position[1] > WINDOW_HEIGHT /RENDERER_SCALE)
+    {
+        position[1] = 0;
+    } else if (position[1] < 0)
+    {
+        position[1] = WINDOW_HEIGHT /RENDERER_SCALE;
+    }
+
+    return position;
+}
+
+double calculateDistance(const vector<double>& p1, const vector<double>& p2) {
+    double distance = sqrt(pow(p1[0] - p2[0], 2) + pow(p1[1] - p2[1], 2));
+    return distance;
+}
+
+// For now, neighbor function is just Euclidean num_neighbors closest particles
+vector<vector<double>> get_social_neighbors(const vector<double>& reference, const vector<vector<double>>& positions, int num_neighbors) {
+    vector<pair<double, vector<double>>> distances;
+
+    for (const auto& pos : positions) {
+        double distance = calculateDistance(pos, reference);
+        distances.push_back({distance, pos});
+    }
+
+    sort(distances.begin(), distances.end());
+
+    vector<vector<double>> neighbors;
+    for (size_t i = 0; i < num_neighbors; ++i) {
+        neighbors.push_back(distances[i].second);
+    }
+
+    return neighbors;
+}
+
+vector<double> get_best_position(vector<vector<double>>& positions, vector<double> f_center) {
+    vector<double> best_position = positions[0];
+    double current_best_value = f(best_position, f_center);
+
+    for (const auto& position : positions) {
+        double position_value = f(position, f_center);
+
+        if (position_value < current_best_value) {
+            // Update the current best position and value
+            best_position = position;
+            current_best_value = position_value;
+        }
+    }
+
+    return best_position;
+}
+
 // Run PSO simulation
-vector<vector<vector<double>>> run_pso(int num_particles, int max_iterations, double c1, double c2, double w, mt19937 gen) {
+pair<vector<vector<vector<double>>>, vector<vector<double>>> run_pso(int num_particles, int max_iterations, int num_neighbors, double c1, double c2, double w, mt19937 gen) {
     double timestep = 0.01;
 
     // Initialize the global best-known position and value
@@ -93,68 +116,54 @@ vector<vector<vector<double>>> run_pso(int num_particles, int max_iterations, do
     vector<vector<double>> particle_positions = get<0>(particles);
     vector<vector<double>> particle_velocities = get<1>(particles);
     vector<vector<double>> particle_best_positions = get<2>(particles);
-
-    vector<double> global_best_position = particle_best_positions[0];
-    double global_best_value = f(global_best_position);
     vector<vector<vector<double>>> particles_history;
 
+    vector<double> f_center = {0.0, 0.0};
+    vector<vector<double>> f_center_history;
+
     // Random distribution for random weighting of cognitive vs social vs inertial
-    uniform_real_distribution<double> weighting_distribution(0.0, 1.0);
+    uniform_real_distribution<double> U(0.0, 1.0);
 
     // PSO optimization loop
     for (int iteration = 0; iteration < max_iterations; ++iteration) {
+        if (iteration % 100 == 0) {
+            f_center = {U(gen) *WINDOW_WIDTH/RENDERER_SCALE, U(gen) *WINDOW_HEIGHT/RENDERER_SCALE};
+        }
+
         for (int i = 0; i < num_particles; ++i) {
             vector<double>& position = particle_positions[i];
             vector<double>& velocity = particle_velocities[i];
             vector<double>& personal_best_position = particle_best_positions[i];
 
-            // 1. Update velocity and position
-            double r1 = weighting_distribution(gen);
-            double r2 = weighting_distribution(gen);
+            // 0. Find social influence group and social_best_position
+            vector<vector<double>> social_neighbors_positions = get_social_neighbors(position, particle_positions, num_neighbors);
+            vector<double> social_best_position = get_best_position(social_neighbors_positions, f_center);
 
-            velocity[0] = w * velocity[0] + c1 * r1 * (personal_best_position[0] - position[0]) + c2 * r2 * (global_best_position[0] - position[0]);
-            velocity[1] = w * velocity[1] + c1 * r1 * (personal_best_position[1] - position[1]) + c2 * r2 * (global_best_position[1] - position[1]);
+            // 1. Update velocity and position
+            double r1 = U(gen);
+            double r2 = U(gen);
+
+            velocity[0] = w * velocity[0] + c1 * r1 * (personal_best_position[0] - position[0]) + c2 * r2 * (social_best_position[0] - position[0]);
+            velocity[1] = w * velocity[1] + c1 * r1 * (personal_best_position[1] - position[1]) + c2 * r2 * (social_best_position[1] - position[1]);
 
             position[0] = position[0] + velocity[0]*timestep;
             position[1] = position[1] + velocity[1]*timestep;
-            // Infinite space
-            if (position[0] > WINDOW_WIDTH /RENDERER_SCALE)
-            {
-                position[0] = 0;
-            } else if (position[0] < 0)
-            {
-                position[0] = WINDOW_WIDTH /RENDERER_SCALE;
-            }
-
-            if (position[1] > WINDOW_HEIGHT /RENDERER_SCALE)
-            {
-                position[1] = 0;
-            } else if (position[1] < 0)
-            {
-                position[1] = WINDOW_HEIGHT /RENDERER_SCALE;
-            }
+            position = infinite_space(position);
 
             // 2. Evaluate the objective function at the new position
-            double value = f(position);
+            double value = f(position, f_center);
 
             // 3. Update personal best if needed
-            if (value < f(personal_best_position)) {
+            if (value < f(personal_best_position, f_center)) {
                 personal_best_position = position;
-            }
-
-            // 4. Update global best if needed
-            if (value < global_best_value) {
-                global_best_position = position;
-                global_best_value = value;
             }
         }
 
         particles_history.push_back(particle_positions);
+        f_center_history.push_back(f_center);
     }
 
-    cout << "Optimal Solution: x = " << global_best_position[0] << ", y = " << global_best_position[1] << ", f(x) = " << global_best_value << endl;
-
-    return particles_history;
+    return make_pair(particles_history, f_center_history);
 }
 
 void draw_particles(SDL_Renderer* renderer, int time, vector<vector<vector<double>>> particles_history, int num_particles) {
@@ -173,20 +182,28 @@ void draw_particles(SDL_Renderer* renderer, int time, vector<vector<vector<doubl
     }
 }
 
+void draw_f_center(SDL_Renderer* renderer, vector<double> f_center) {
+    SDL_SetRenderDrawColor(renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
+    SDL_RenderDrawPoint(renderer, f_center[0], f_center[1]);
+}
+
 int main() {
     // INTITIALIZATION =============================================================
     // Define the PSO parameters
     const int num_particles = 100;
     const int max_iterations = 1000;
+    const int num_neighbors = 10;
     const double c1 = 1.5;  // Cognitive parameter
     const double c2 = 1.5;  // Social parameter
     const double w = 0.9;   // Inertia weight
 
     // Initialize the random seed
-    mt19937 gen(314); // supposedly this seeds the rand num generator
+    mt19937 gen(31415); // supposedly this seeds the rand num generator
 
     // RUNNING SIMULATION =============================================================
-    vector<vector<vector<double>>> particles_history = run_pso(num_particles, max_iterations, c1, c2, w, gen);
+    pair<vector<vector<vector<double>>>, vector<vector<double>>> pso_history = run_pso(num_particles, max_iterations, num_neighbors, c1, c2, w, gen);
+    vector<vector<vector<double>>> particles_history = pso_history.first;
+    vector<vector<double>> f_center_history = pso_history.second;
 
     // DISPLAYING SIMULATION RESULTS ===================================================
     // Setup
@@ -217,8 +234,9 @@ int main() {
         SDL_SetRenderDrawColor(renderer,0,0,0,SDL_ALPHA_OPAQUE);
         SDL_RenderClear(renderer);
 
-        // draw particles
+        // draw
         draw_particles(renderer, time, particles_history, num_particles);
+        draw_f_center(renderer, f_center_history[time]);
 
         // Render
         SDL_RenderPresent(renderer);
